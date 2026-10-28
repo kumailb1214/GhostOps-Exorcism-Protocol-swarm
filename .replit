@@ -26,3 +26,4 @@ packages = ["libxcrypt"]
 [userenv]
 
 [userenv.shared]
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1564863196202934376/rJr-P0-a9FWnsehNckLK_i-HnTMxdzp8SffZIqRjEWEGEE81VbN03DEyDKddxqEcgjOD"
