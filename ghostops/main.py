@@ -58,7 +58,11 @@ def main() -> int:
     ap.add_argument("--no-submit", action="store_true")
     ap.add_argument("--no-dispatch", action="store_true")
     ap.add_argument("--json", metavar="PATH", help="also write the DecisionRecord(s) as JSON lines to PATH")
+    ap.add_argument("--resubmit", action="store_true",
+                    help="accept the re-served last tick of an exhausted scenario and submit again (organizers: best run counts)")
     a = ap.parse_args()
+    if a.resubmit:
+        os.environ["GHOSTOPS_RESUBMIT"] = "1"
 
     if a.scenario:
         os.environ["SCENARIO"] = a.scenario

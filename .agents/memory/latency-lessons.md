@@ -7,3 +7,5 @@ description: Where decision time went in the GhostOps pipeline and the rules tha
 - Only spend a challenge round where it can change the scored outcome (sector that sets the tick action; not when a deterministic floor already decides).
 **Why:** rival team posted 3.5–4 s decision times; ours were 18–28 s almost entirely from cold start + verbose outputs, not from the model.
 **How to apply:** any new stage must justify its ~2 s; measure per-role call time before touching the architecture.
+- Feed MCP calls cost ~1 s (get-tick) + ~2 s (submit) each when every call opens a fresh streamable-HTTP session; a persistent session on a background loop brings both under 0.5 s.
+- Organizers (per a judge, 2026-10-28) accept resubmission on the same ticks when no new ticks exist; best run counts. `--resubmit` bypasses the exhausted-feed guard.

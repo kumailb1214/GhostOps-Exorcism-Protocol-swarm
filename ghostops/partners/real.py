@@ -6,6 +6,7 @@ DISCORD_CHANNEL_ID, TEAM_HANDLE, optional DISCORD_WEBHOOK_URL (venue fallback on
 from __future__ import annotations
 
 import asyncio
+import threading
 import json
 import os
 import time
@@ -64,6 +65,47 @@ def mcp_call(url: str, tool: str, args: dict[str, Any], headers: dict[str, str] 
     return asyncio.run(_mcp_call(url, tool, args, headers))
 
 
+class PersistentMCP:
+    """One MCP session kept open on a background event loop, so get-tick and submit do not each pay a fresh
+    HTTP connection + initialize handshake (~1 s each, measured). Falls back to one-shot calls if the session dies."""
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self._loop = asyncio.new_event_loop()
+        self._session: ClientSession | None = None
+        self._ready = threading.Event()
+        self._stop: asyncio.Event | None = None
+        threading.Thread(target=self._run, daemon=True).start()
+        self._ready.wait(timeout=15)
+
+    def _run(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_until_complete(self._serve())
+
+    async def _serve(self) -> None:
+        self._stop = asyncio.Event()
+        try:
+            async with streamablehttp_client(self.url) as (r, w, _):
+                async with ClientSession(r, w) as s:
+                    await s.initialize()
+                    self._session = s
+                    self._ready.set()
+                    await self._stop.wait()
+        except Exception:
+            self._session = None
+            self._ready.set()
+
+    def call(self, tool: str, args: dict[str, Any]) -> Any:
+        if self._session is None:
+            return mcp_call(self.url, tool, args)
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self._session.call_tool(tool, args), self._loop)
+            return _parse_tool_result(fut.result(timeout=30), tool)
+        except Exception:
+            self._session = None  # session is gone: degrade to one-shot calls, loudly visible in timings
+            return mcp_call(self.url, tool, args)
+
+
 def _parse_tool_result(res: Any, tool: str) -> Any:
     if getattr(res, "isError", False):
         raise PartnerError(f"{tool} failed: {res.content}")
@@ -95,6 +137,7 @@ class RealPartners(PartnerClient):
     def __init__(self) -> None:
         super().__init__()
         self.scenario_url = os.environ.get("SCENARIO_MCP", "https://api.you.com/mcp/halloween-hack-26")
+        self._feed = PersistentMCP(self.scenario_url)
         self.team = os.environ.get("TEAM_HANDLE", "agent-doom")
         self.scenario = os.environ.get("SCENARIO", "outbreak-level-5")  # feed enum: outbreak-level-5 | control-tick
         self.team_token = os.environ.get("TEAM_TOKEN")  # only if organizers enable tokens
@@ -129,15 +172,15 @@ class RealPartners(PartnerClient):
     def get_tick(self) -> Tick:
         """Live schema (verified 2026-10-28): get-tick requires team + scenario; returns {tick, exhausted}."""
         self.calls["scenario.get_tick"] += 1
-        data = mcp_call(self.scenario_url, "hack26-get-tick", self._feed_args(scenario=self.scenario))
-        if data.get("exhausted"):
+        data = self._feed.call("hack26-get-tick", self._feed_args(scenario=self.scenario))
+        if data.get("exhausted") and os.environ.get("GHOSTOPS_RESUBMIT") != "1":
             raise FeedExhausted(f"scenario '{self.scenario}' has no new ticks for {self.team} "
                                 f"(last tick {(data.get('tick') or {}).get('tick_id')}); submitting again would be a duplicate")
         return Tick.model_validate(data.get("tick", data))
 
     def submit(self, team: str, tick_id: int, action: str) -> Judgment:
         self.calls["scenario.submit"] += 1
-        data = mcp_call(self.scenario_url, "hack26-submit-containment",
+        data = self._feed.call("hack26-submit-containment",
                         self._feed_args(tick_id=tick_id, action=action))
         j = data.get("judgment") or data  # live feed nests the verdict under "judgment"
         return Judgment(expected_action=j.get("expected_action") or j.get("expected"),
@@ -145,7 +188,7 @@ class RealPartners(PartnerClient):
 
     def scoreboard(self) -> Any:
         self.calls["scenario.scoreboard"] += 1
-        return mcp_call(self.scenario_url, "hack26-get-scoreboard", {})
+        return self._feed.call("hack26-get-scoreboard", {})
 
     # --- You.com --------------------------------------------------------
     def ground(self, query: str, count: int = 3) -> list[dict[str, str]]:

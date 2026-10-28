@@ -13,6 +13,7 @@ python main.py --mock --eval    # baseline vs enhanced over every fixture
 python main.py                  # live: pull tick → decide → submit → dispatch to #loft-incident
 python main.py --scenario outbreak-level-5 --loop 2   # both outbreak ticks (stops itself when the feed is exhausted)
 python main.py --scenario control-tick                # the control tick (must be observe)
+python main.py --scenario outbreak-level-5 --resubmit  # exhausted feed: re-run the last tick and submit again (organizers: best run counts)
 python main.py --scoreboard     # live scoreboard
 python main.py --no-challenge   # ablation: disable the risk gate
 ```
@@ -36,9 +37,8 @@ is escalated to the full panel in the same stage as the challenge round. Concurr
 |---|---|---|
 | peak agents | 7 | **4** |
 | model calls | 13 | **5** |
-| decision time | 25 s | **3.0–3.7 s** |
-| control tick | 4 agents, 9 s | **1 agent, 1.3 s** |
-| all three scored ticks | ~60 s | **8.0 s** |
+| decision time (live, incl. feed pull + submit) | 25 s | **3.3–4.7 s** |
+| control tick | 4 agents, 9 s | **1 agent, 2.7 s** |
 
 Where the time went, and what we did about it: the first CrewAI/LLM call in a process costs ~20 s of client
 initialisation (now paid in `warm_up()` before the tick clock starts); long free-text outputs cost 3–4 s per
