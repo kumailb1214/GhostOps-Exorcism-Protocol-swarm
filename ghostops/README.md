@@ -62,7 +62,7 @@ eval/             memory.py (provenance-tagged), harness.py (baseline vs enhance
 
 1. One MCP → one retry inside the transport.
 2. `DISCORD_WEBHOOK_URL` if set (method = `webhook-fallback`; tell the organizers' table).
-3. `ok=False, method=manual` — post `team-XX · [sector] · ACTION · rationale` yourself from the account that joined the server.
+3. `ok=False, method=manual` — post `agent-doom · [sector] · ACTION · rationale` yourself from the account that joined the server.
 
 Feed down? `python main.py --fixture eval/fixtures/outbreak-level-5.json` runs the identical contract offline; queue the
 decision and replay to `hack26-submit-containment` when it returns.

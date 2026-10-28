@@ -55,7 +55,7 @@ def main() -> int:
     ap.add_argument("--json", metavar="PATH", help="also write the DecisionRecord(s) as JSON lines to PATH")
     a = ap.parse_args()
 
-    team = os.environ.get("TEAM_HANDLE", "team-XX")
+    team = os.environ.get("TEAM_HANDLE", "agent-doom")
     mock = a.mock or os.environ.get("MOCK_PARTNERS") == "1"
     partners = make_partners(mock=mock, fixture=a.fixture)
     memory = SwarmMemory(partners)
