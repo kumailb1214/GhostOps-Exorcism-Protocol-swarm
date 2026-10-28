@@ -157,21 +157,35 @@ class ContainmentFlow(Flow[FlowState]):
         if self.do_submit:
             j = self.p.submit(self.team, tick.tick_id, action)
             record.submission = j.model_dump()
+        # decision time = tick pulled → containment submitted; the dispatch itself is not counted against us
+        record.timing_ms = int((time.perf_counter() - self.state.started) * 1000)
+        record.partner_calls = dict(self.p.calls)
         if self.do_dispatch and action != "observe":
             record.dispatch = self.p.dispatch(self.escalation_text(record))
         for d in decisions:
             self.memory.remember(d.sector, tick.tick_id, d, record.submission)
-        record.timing_ms = int((time.perf_counter() - self.state.started) * 1000)
-        record.partner_calls = dict(self.p.calls)
         self.record = record
         return record
 
     # --------------------------------------------------------------------
     def escalation_text(self, record: DecisionRecord) -> str:
+        """Judge-readable Discord post: headline, one-line why, then the numbers the track scores on."""
         worst = max(record.sectors, key=lambda d: SEVERITY[d.action])
-        why = worst.rationale.strip().rstrip(".")
-        extra = f" · challenged: {self.state.challenge_reasons[worst.sector]}" if worst.sector in self.state.challenge_reasons else ""
-        return f"{self.team} · [{worst.sector}] · {record.action.upper()} · {why}{extra} (tick {record.tick_id})"
+        why = worst.rationale.strip().split(". ")[0].rstrip(".")
+        lines = [
+            f"**{self.team}** | {record.facility_id} | tick {record.tick_id} | **{record.action.upper()}**",
+            f"{worst.sector}: {why}.",
+        ]
+        if record.submission:
+            lines.append(f"Score: {record.submission.get('score')}; false alarm: {record.submission.get('false_alarm')}.")
+        route = f"risk gate: {self.state.challenge_reasons[worst.sector]}" if worst.sector in self.state.challenge_reasons else "risk gate: not triggered"
+        lines.append(f"Peak agents: {record.agents_used}; decision time: {record.timing_ms / 1000:.1f}s; {route}.")
+        if worst.floor_applied:
+            lines.append(f"Safety floor: {worst.floor_applied}.")
+        others = [d for d in record.sectors if d.sector != worst.sector]
+        if others:
+            lines.append("Other sectors: " + ", ".join(f"{d.sector} → {d.action}" for d in others) + ".")
+        return "\n".join(lines)
 
 
 def run_tick(partners: PartnerClient, memory: SwarmMemory, **kw: Any) -> DecisionRecord:
