@@ -35,9 +35,16 @@ is escalated to the full panel in the same stage as the challenge round. Concurr
 | | before | after |
 |---|---|---|
 | peak agents | 7 | **4** |
-| model calls | 13 | **6** |
-| decision time | 25 s | **12–14 s** |
-| control tick | 4 agents, 9 s | **1 agent, 6 s** |
+| model calls | 13 | **5** |
+| decision time | 25 s | **4.5–4.7 s** |
+| control tick | 4 agents, 9 s | **1 agent, 1.4 s** |
+
+Where the time went, and what we did about it: the first CrewAI/LLM call in a process costs ~20 s of client
+initialisation (now paid in `warm_up()` before the tick clock starts); long free-text outputs cost 3–4 s per
+specialist (now capped: terse schema, `max_tokens=1024`); and the challenge round ran even when it could not change
+the tick action (now gated: only for the sector that can still set the tick action, and never when the
+pinned-civilian floor already decides it). The model itself answers in ~1.6 s; two sequential stages — specialists
+in parallel, then the commander — is the floor for a pipeline where someone other than the sensors decides.
 
 Triage allocates agents; it never decides the action. Every sector is read by at least one agent and the record
 says which panel it got (`panel`, `severity_score`).

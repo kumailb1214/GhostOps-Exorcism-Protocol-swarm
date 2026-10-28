@@ -37,7 +37,8 @@ SCHEMA_HINT = (
     '{"finding": str, "evidence": [{"claim": str, "provenance": "observed"|"retrieved"|"hypothesized", "source": str}], '
     '"missing_evidence": [str], "recommended_action": "contain"|"evacuate"|"observe"}. '
     "Tag every claim with its provenance honestly: sensor/witness data is observed, web results are retrieved, "
-    "your inferences are hypothesized. List what evidence you would need but do not have."
+    "your inferences are hypothesized. List what evidence you would need but do not have. "
+    "Be terse: finding ≤ 30 words, at most 3 evidence items, at most 2 missing_evidence items."
 )
 
 
@@ -59,8 +60,10 @@ class Swarm:
         self.sensor = dict(
             role="Sensor Analyst", llm=llm, tools=[], verbose=False, max_iter=2,  # prior signatures arrive in its payload
             goal="Decide whether the sector's sensor readings form a coherent paranormal signature or a false positive.",
-            backstory="You read EMF, thermal and motion telemetry. You never see witness reports; you judge physics only "
-                      "and you flag internally inconsistent readings instead of explaining them away.")
+            backstory="You read EMF, thermal and motion telemetry. You never see witness reports; you judge physics only. "
+                      "A coherent signature is several channels anomalous together (EMF ≥ 60 mG with a cold spot ≤ 5 C, "
+                      "motion rising with them): recommend contain. One channel alone, or readings within equipment norms, "
+                      "is a probable false positive: recommend observe. Never explain away a coherent signature.")
         self.researcher = dict(
             role="Grounding Researcher", llm=llm, tools=[youcom_search], verbose=False, max_iter=3,
             goal="Verify the reported sighting against external references and say what evidence is missing.",
@@ -76,6 +79,12 @@ class Swarm:
             goal="Choose contain, evacuate or observe for the sector from specialist reports and explain the call.",
             backstory="You never see raw telemetry — only structured reports. You resolve disagreement explicitly, "
                       "name what evidence was missing, and say why the alternatives were rejected.")
+
+    def warm_up(self) -> None:
+        """Pay the one-off CrewAI/LLM client initialisation (~15-20 s cold) before the tick clock starts."""
+        class _Ok(BaseModel):
+            ok: bool
+        self._run(dict(self.civilian, max_iter=1), 'Reply with ONLY {"ok": true}.', _Ok)
 
     # ---- specialists ----------------------------------------------------
     def _run(self, spec: dict[str, Any], description: str, out_model: type[BaseModel]) -> BaseModel:
@@ -116,5 +125,5 @@ class Swarm:
                 "\"supporting_observations\": [str], \"disagreement\": str, \"missing_evidence\": [str], "
                 "\"rejected_alternatives\": str}. Rules: pinned civilians require evacuate; a control sector with no "
                 "corroborated signature must be observe — a false alarm is scored against us; contain when the "
-                "signature is real but no one is in danger.")
+                "signature is real but no one is in danger. Be terse: rationale ≤ 40 words, lists ≤ 3 items.")
         return self._run(self.commander, desc, CommanderOut)  # type: ignore[return-value]

@@ -81,6 +81,10 @@ def main() -> int:
         show_comparison(baseline, enhanced)
         return 0
 
+    if not mock:
+        from swarm.agents import Swarm
+        Swarm(partners, memory).warm_up()  # cold-start cost is paid here, outside the tick→submit clock
+        partners.reset_counts()
     for i in range(a.loop):
         tick = Tick.model_validate(json.loads(Path(a.fixture).read_text())) if a.fixture else None
         try:

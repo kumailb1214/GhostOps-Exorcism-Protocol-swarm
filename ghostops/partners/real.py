@@ -105,7 +105,7 @@ class RealPartners(PartnerClient):
             base_url=PARASAIL_BASE,
             api_key=os.environ["PARASAIL_API_KEY"],
             temperature=0.1,
-            max_tokens=4096,
+            max_tokens=1024,
             # GLM-5.3-flash is a reasoning model: without this it burns the whole token budget thinking and
             # returns content=None. reasoning_effort=low keeps ~40 reasoning tokens and ~1 s latency (verified live).
             reasoning_effort="low",

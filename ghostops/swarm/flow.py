@@ -83,12 +83,21 @@ class ContainmentFlow(Flow[FlowState]):
             return "fast"
         tick = self.state.tick
         assert tick
+        # A sector's dissent only matters for the tick when that sector can still set the tick action: the tick is
+        # scored on its most severe sector, so we never spend a challenge round on a sector another one outranks.
+        worst_rec = {s: max((r.recommended_action for r in rs), key=lambda a: SEVERITY[a]) for s, rs in reports.items()}
         for rep in tick.sector_reports:
+            others = [SEVERITY[worst_rec[s]] for s in worst_rec if s != rep.sector]
+            if others and SEVERITY[worst_rec[rep.sector]] < max(others):
+                continue  # outranked: its action cannot change the tick's
             if self.state.panel[rep.sector] == "quiet":
                 sensor = reports[rep.sector][0]
                 if sensor.recommended_action != "observe":  # the single analyst saw something: convene the panel
                     self.state.escalations[rep.sector] = f"sensor analyst recommends {sensor.recommended_action}"
                 continue
+            civ = next((r for r in reports[rep.sector] if r.role == Role.CIVILIAN), None)
+            if civ and civ.recommended_action == "evacuate" and civilians_at_risk(rep.civilian_status):
+                continue  # the pinned-civilian floor decides this sector; a challenge could not change the action
             flag, why = needs_challenge(reports[rep.sector], rep.civilian_status)
             if flag:
                 self.state.challenge_reasons[rep.sector] = why

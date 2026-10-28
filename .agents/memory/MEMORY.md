@@ -1,3 +1,4 @@
 - [One MCP auth](one-mcp-auth.md) — hosted mcp.withone.ai is OAuth-only; code must use local `npx @withone/mcp` with ONE_SECRET; Discord must be connected on the account.
 - [Parasail GLM reasoning](crewai-quirks.md) — parasail-glm-53-flash needs reasoning_effort=low or it spends the whole max_tokens thinking and returns content=None.
 - [CrewAI quirks](crewai-quirks.md) — flow banners ignore verbose (patch formatter.print); BaseLLM subclass works as mock agent brain; 12 s import cost is normal.
+- [Tick latency lessons](latency-lessons.md) — ~20 s cold start on first Crew kickoff; latency scales with output length; gate challenge rounds by whether they can change the scored action.
