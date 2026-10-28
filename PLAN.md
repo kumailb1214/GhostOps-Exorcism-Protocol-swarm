@@ -49,7 +49,7 @@ ghostops/
 │   ├─ flow.py             # CrewAI Flow + router
 │   ├─ agents.py           # 4 agents, scoped tools, scoped Memory
 │   ├─ challenge.py        # bounded second-assessment round
-│   └─ budget.py           # max_active_agents enforcement
+│   └─ triage.py           # max_active_agents enforcement
 ├─ partners/               # Person B
 │   ├─ base.py             # PartnerClient interface
 │   ├─ mock.py             # MOCK_PARTNERS=1 implementation

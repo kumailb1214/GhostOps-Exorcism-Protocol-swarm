@@ -87,6 +87,8 @@ class SectorDecision(BaseModel):
     rejected_alternatives: str = ""
     challenged: bool = False
     floor_applied: str = ""  # deterministic safety floor that overrode the commander, if any
+    panel: Literal["full", "quiet", "escalated"] = "full"  # how much swarm triage gave this sector
+    severity_score: int = 0
 
 
 class DecisionRecord(BaseModel):

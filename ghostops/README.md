@@ -24,6 +24,24 @@ and further submissions are flagged `duplicate` (not scored twice). To answer a 
 
 Python 3.10–3.13. Dependencies are in the repo root `pyproject.toml` (`uv sync` or `pip install crewai crewai-tools httpx openai pydantic python-dotenv rich`).
 
+## Lean by design: triage before agents
+
+Before any model runs, `swarm/triage.py` scores every sector from the signals the referee sees and sorts them
+(the **inspection order**). Hot sectors (civilians at risk, a breach, or a strong multi-signal signature) get the
+full 3-specialist panel. Quiet sectors get **one sensor analyst**; if it recommends anything but observe the sector
+is escalated to the full panel in the same stage as the challenge round. Concurrency is capped at
+`GHOSTOPS_MAX_AGENTS` (default 4) under the feed's budget. Measured live on the real tick 143 shape:
+
+| | before | after |
+|---|---|---|
+| peak agents | 7 | **4** |
+| model calls | 13 | **6** |
+| decision time | 25 s | **12–14 s** |
+| control tick | 4 agents, 9 s | **1 agent, 6 s** |
+
+Triage allocates agents; it never decides the action. Every sector is read by at least one agent and the record
+says which panel it got (`panel`, `severity_score`).
+
 ## The pipeline (one CrewAI Flow per tick)
 
 ```
@@ -60,7 +78,7 @@ Partner calls per tick are printed in the Outcome panel (`partner_calls`).
 
 ```
 schemas.py        shared contract (Tick, SpecialistReport, DecisionRecord, PartnerClient shape)
-swarm/            flow.py (pipeline), agents.py (4 agents), challenge.py (risk gate), budget.py
+swarm/            flow.py (pipeline), agents.py (4 agents), challenge.py (risk gate), triage.py
 partners/         base.py (interface), mock.py (MOCK_PARTNERS=1), real.py (You.com, Parasail, One, scenario MCP)
 eval/             memory.py (provenance-tagged), harness.py (baseline vs enhanced), timeline.py, fixtures/
 ```

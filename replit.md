@@ -26,7 +26,7 @@ Track 1 (Exorcism Protocol) entry for Hack with YOU: Halloween 2026 — a CrewAI
 ## Where things live
 
 - `ghostops/schemas.py` — shared contract (Tick, SpecialistReport, DecisionRecord). Change only with a group ping.
-- `ghostops/swarm/` — flow.py is the single pipeline; agents.py the 4 agents; challenge.py the risk gate; budget.py wave planning
+- `ghostops/swarm/` — flow.py is the single pipeline; agents.py the 4 agents; challenge.py the risk gate; triage.py severity, inspection order, wave packing (cap GHOSTOPS_MAX_AGENTS=4)
 - `ghostops/partners/` — base.py interface, mock.py (MOCK_PARTNERS=1), real.py (You.com, Parasail, One, scenario MCP)
 - `ghostops/eval/` — memory, harness, timeline, fixtures
 - The pnpm/TypeScript scaffold (`artifacts/`, `lib/`) is unused by the swarm
