@@ -179,11 +179,41 @@ class ContainmentFlow(Flow[FlowState]):
                 rejected_alternatives="No panel convened: single-analyst inspection found no coherent signature, "
                                       "and triage saw no civilians at risk or breach.")
 
+        def settled(rep) -> SectorDecision | None:
+            """A panel that agrees, or one the pinned-civilian floor already decides, needs no commander round:
+            the action is fixed by the reports, so the extra model call could only restate them (and cost ~2 s)."""
+            latest: dict[Role, SpecialistReport] = {r.role: r for r in self.state.reports[rep.sector]}
+            recs = {r.recommended_action for r in latest.values()}
+            civ = latest.get(Role.CIVILIAN)
+            if len(recs) == 1:
+                action, why = recs.pop(), "all specialists agree"
+            elif civ and civ.recommended_action == "evacuate" and civilians_at_risk(rep.civilian_status):
+                action, why = "evacuate", f"civilians at risk ({rep.civilian_status}) and the safety officer says evacuate"
+            else:
+                return None
+            return SectorDecision(
+                sector=rep.sector, action=action, panel=self.state.panel[rep.sector], severity_score=severity(rep),
+                challenged=rep.sector in self.state.challenge_reasons, settled_by=why,
+                rationale=f"Settled without a commander round ({why}). "
+                          + " ".join(f"{r.role.value}: {r.finding}" for r in latest.values()),
+                supporting_observations=[e.claim for r in latest.values() for e in r.evidence][:6],
+                disagreement="" if len(recs) <= 1 else f"specialists split ({', '.join(sorted(recs))}); floor decides",
+                missing_evidence=sorted({m for r in latest.values() for m in r.missing_evidence})[:4],
+                rejected_alternatives=f"Alternatives to {action} were not argued by any specialist.")
+
         ordered = [r for s in self.state.order for r in tick.sector_reports if r.sector == s]
-        need_commander = [r for r in ordered if self.state.panel[r.sector] != "quiet"]
+        pre: dict[str, SectorDecision] = {}
+        need_commander = []
+        for rep in ordered:
+            if self.state.panel[rep.sector] == "quiet":
+                pre[rep.sector] = quiet_decision(rep)
+            elif (d := settled(rep)) is not None:
+                pre[rep.sector] = d
+            else:
+                need_commander.append(rep)
         decided = {d.sector: d for d in self._parallel(command, need_commander, effective_cap(tick.swarm_budget.max_active_agents))}
         for rep in ordered:
-            self.state.decisions.append(decided.get(rep.sector) or quiet_decision(rep))
+            self.state.decisions.append(decided.get(rep.sector) or pre[rep.sector])
         return self.state.decisions
 
     @staticmethod
