@@ -212,7 +212,7 @@ class RealPartners(PartnerClient):
         one_key = os.environ.get("ONE_SECRET") or os.environ.get("ONE_API_KEY")
         if self._one_broken:
             err = f"One skipped (failed earlier this run: {self._one_broken})"
-        elif one_key and os.environ.get("ONE_DISPATCH", "1") != "0":
+        elif one_key and os.environ.get("ONE_DISPATCH", "0") == "1":
             try:
                 res = self._dispatch_via_one(one_key, content)
                 self._last_dispatch = content
@@ -223,7 +223,7 @@ class RealPartners(PartnerClient):
                 self._one_broken = str(e)[:200]
                 err = f"One failed: {e}"
         else:
-            err = "One dispatch disabled or ONE_API_KEY not set"
+            err = "One not attempted (ONE_DISPATCH=1 to try it; organizers list it as optional)"
         hook = os.environ.get("DISCORD_WEBHOOK_URL")
         if hook:
             r = self._http.post(hook, json={"content": content})

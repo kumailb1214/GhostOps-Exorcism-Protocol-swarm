@@ -87,15 +87,26 @@ class ContainmentFlow(Flow[FlowState]):
     def challenge_round(self) -> str:
         tick = self.state.tick
         assert tick
-        for rep in tick.sector_reports:
-            if rep.sector not in self.state.challenge_reasons:
-                continue
+
+        def rechallenge(rep):
             reports = self.state.reports[rep.sector]
             dissenter = pick_dissenter(reports)
             prompt = challenge_prompt(dissenter, [r for r in reports if r is not dissenter])
-            revised = self.swarm.specialist(dissenter.role, rep, challenge=prompt)
-            reports.append(revised)  # keep the original: the commander sees the change of mind
+            return rep.sector, self.swarm.specialist(dissenter.role, rep, challenge=prompt)
+
+        flagged = [rep for rep in tick.sector_reports if rep.sector in self.state.challenge_reasons]
+        # One challenged agent per flagged sector, in parallel, never more than the budget allows.
+        for sector, revised in self._parallel(rechallenge, flagged, tick.swarm_budget.max_active_agents):
+            self.state.reports[sector].append(revised)  # keep the original: the commander sees the change of mind
         return "decide"
+
+    def _parallel(self, fn, items, max_active: int):
+        if not items:
+            return []
+        if max_active < 2 or len(items) == 1:
+            return [fn(i) for i in items]
+        with ThreadPoolExecutor(max_workers=min(len(items), max_active)) as ex:
+            return list(ex.map(fn, items))
 
     # 4 ------------------------------------------------------------------
     @listen("fast")
@@ -109,16 +120,19 @@ class ContainmentFlow(Flow[FlowState]):
     def _decide(self) -> list[SectorDecision]:
         tick = self.state.tick
         assert tick
-        for rep in tick.sector_reports:
-            reports = self.state.reports[rep.sector]
+
+        def command(rep):
             # Commander reasons over the latest word from each role.
             latest: dict[Role, SpecialistReport] = {}
-            for r in reports:
+            for r in self.state.reports[rep.sector]:
                 latest[r.role] = r
             out = self.swarm.command(rep.sector, list(latest.values()))
             decision = SectorDecision(sector=rep.sector, challenged=rep.sector in self.state.challenge_reasons, **out.model_dump())
             self._apply_floors(decision, latest, rep.civilian_status)
-            self.state.decisions.append(decision)
+            return decision
+
+        # One commander per sector, in parallel within the budget; order of decisions follows the tick.
+        self.state.decisions.extend(self._parallel(command, list(tick.sector_reports), tick.swarm_budget.max_active_agents))
         return self.state.decisions
 
     @staticmethod

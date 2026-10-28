@@ -56,13 +56,8 @@ class Swarm:
             """Search the live web via You.com for facts about an entity class, a facility, or a protocol."""
             return json.dumps(partners.ground(query, count=3))
 
-        @tool("recall_signatures")
-        def recall_signatures(sector: str) -> str:
-            """Recall prior sensor signatures, decisions and judgments for a sector from swarm memory."""
-            return json.dumps(memory.recall(sector))
-
         self.sensor = dict(
-            role="Sensor Analyst", llm=llm, tools=[recall_signatures], verbose=False, max_iter=3,
+            role="Sensor Analyst", llm=llm, tools=[], verbose=False, max_iter=2,  # prior signatures arrive in its payload
             goal="Decide whether the sector's sensor readings form a coherent paranormal signature or a false positive.",
             backstory="You read EMF, thermal and motion telemetry. You never see witness reports; you judge physics only "
                       "and you flag internally inconsistent readings instead of explaining them away.")
