@@ -1,6 +1,6 @@
 """Real partner clients. Every call is counted so the decision record can prove partner usage.
 
-Env (see .env.example): YDC_API_KEY, PARASAIL_API_KEY, ONE_API_KEY, ONE_MCP_URL, SCENARIO_MCP,
+Env (see .env.example): YDC_API_KEY, PARASAIL_API_KEY, ONE_API_KEY (used as ONE_SECRET), SCENARIO_MCP,
 DISCORD_CHANNEL_ID, TEAM_HANDLE, optional DISCORD_WEBHOOK_URL (venue fallback only).
 """
 from __future__ import annotations
@@ -15,7 +15,8 @@ import httpx
 from crewai import LLM
 from crewai.events import crewai_event_bus
 from crewai.events.types.llm_events import LLMCallCompletedEvent
-from mcp import ClientSession
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from openai import OpenAI
 
@@ -59,6 +60,33 @@ def mcp_call(url: str, tool: str, args: dict[str, Any], headers: dict[str, str] 
     return asyncio.run(_mcp_call(url, tool, args, headers))
 
 
+def _parse_tool_result(res: Any, tool: str) -> Any:
+    if getattr(res, "isError", False):
+        raise PartnerError(f"{tool} failed: {res.content}")
+    if getattr(res, "structuredContent", None):
+        return res.structuredContent
+    text = "".join(getattr(c, "text", "") for c in res.content)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"text": text}
+
+
+async def _one_calls(secret: str, calls: list[tuple[str, dict[str, Any]]]) -> list[Any]:
+    """One's hosted MCP server is browser-OAuth only (its skill doc: a bearer key does NOT work against it).
+    Frameworks use the local `npx -y @withone/mcp` server, which reads ONE_SECRET from the environment.
+    Several tool calls share one child process so list → find → execute costs one startup."""
+    params = StdioServerParameters(command="npx", args=["-y", "@withone/mcp"],
+                                   env={**os.environ, "ONE_SECRET": secret})
+    out = []
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            for tool, args in calls:
+                out.append(_parse_tool_result(await s.call_tool(tool, args), tool))
+    return out
+
+
 class RealPartners(PartnerClient):
     def __init__(self) -> None:
         super().__init__()
@@ -81,6 +109,7 @@ class RealPartners(PartnerClient):
             self.calls["parasail.chat"] += 1
         self._http = httpx.Client(timeout=20)
         self._last_dispatch: str | None = None
+        self._one_action: dict[str, Any] | None = None  # resolved once per process via find_one_actions
 
     # --- scenario feed -------------------------------------------------
     def get_tick(self) -> Tick:
@@ -130,27 +159,47 @@ class RealPartners(PartnerClient):
         return [d.embedding for d in res.data]
 
     # --- One ------------------------------------------------------------
+    def _dispatch_via_one(self, secret: str, content: str) -> Any:
+        """list → find → execute, per One's three-tool loop. Action ids are resolved live, never hardcoded."""
+        if self._one_action is None:
+            listed, found = asyncio.run(_one_calls(secret, [
+                ("list_one_integrations", {}),
+                ("find_one_actions", {"task": "post a containment alert to the venue incident channel",
+                                      "ai_model": PARASAIL_CHAT_MODEL,
+                                      "requests": [{"platform": "discord", "intent": "send a message to a channel"}]}),
+            ]))
+            conns = [c for c in listed.get("connections", []) if c.get("platform") == "discord"]
+            if not conns:
+                have = sorted({c.get("platform") for c in listed.get("connections", [])})
+                raise PartnerError(f"Discord is not connected on this One account (connected: {have}). "
+                                   "Add it at https://app.withone.ai or `one add discord`.")
+            results = found.get("results") or found.get("actions") or []
+            chosen = (results[0].get("action") or results[0]) if results else {}
+            action_id = chosen.get("actionId") or chosen.get("action_id")
+            if not action_id:
+                raise PartnerError(f"find_one_actions returned no Discord action: {json.dumps(found)[:300]}")
+            self._one_action = {"platform": "discord", "actionId": action_id, "connectionKey": conns[0]["key"],
+                                "path": chosen.get("path", "")}
+        a = self._one_action
+        (res,) = asyncio.run(_one_calls(secret, [("execute_one_action", {
+            "platform": a["platform"], "actionId": a["actionId"], "connectionKey": a["connectionKey"],
+            "pathVariables": {"channelId": self.channel_id}, "data": {"content": content}})]))
+        return res
+
     def dispatch(self, content: str) -> dict[str, Any]:
         if content == self._last_dispatch:
             return {"ok": True, "method": "dedup", "detail": "identical escalation already posted"}
         self.calls["one.dispatch"] += 1
-        one_url, one_key = os.environ.get("ONE_MCP_URL"), os.environ.get("ONE_API_KEY")
-        if one_url and one_key:
-            headers = {"Authorization": f"Bearer {one_key}"}
+        one_key = os.environ.get("ONE_SECRET") or os.environ.get("ONE_API_KEY")
+        if one_key:
             try:
-                found = mcp_call(one_url, "find_one_actions", {
-                    "task": "post a containment alert to the venue channel",
-                    "requests": [{"platform": "discord", "intent": "send a message to a channel"}]}, headers)
-                cand = (found.get("actions") or found.get("results") or [found])[0]
-                res = mcp_call(one_url, "execute_one_action", {
-                    "action_id": cand["action_id"], "connection_key": cand["connection_key"],
-                    "path_variables": {"channelId": self.channel_id}, "data": {"content": content}}, headers)
+                res = self._dispatch_via_one(one_key, content)
                 self._last_dispatch = content
                 return {"ok": True, "method": "one", "detail": res}
-            except Exception as e:  # one careful retry is inside mcp transport; now fall back loudly
+            except Exception as e:  # never retry a write blindly; fall back loudly instead
                 err = f"One failed: {e}"
         else:
-            err = "ONE_MCP_URL/ONE_API_KEY not set"
+            err = "ONE_API_KEY not set"
         hook = os.environ.get("DISCORD_WEBHOOK_URL")
         if hook:
             r = self._http.post(hook, json={"content": content})

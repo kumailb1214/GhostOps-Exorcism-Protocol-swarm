@@ -51,7 +51,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - CrewAI flow banners ignore the verbose flag; main.py monkeypatches `EventListener().formatter.print`.
 - Use `MCPServerHTTP`/`streamablehttp_client`, not the URL-string shorthand, inside an event loop (zero tools, no error).
-- `ONE_MCP_URL` must come from the event's One skill; it is not hardcoded.
+- One dispatch uses the local `npx -y @withone/mcp` server with `ONE_API_KEY` as `ONE_SECRET`; the hosted `mcp.withone.ai/mcp` is browser-OAuth only and rejects API keys. Discord must be connected on the One account.
 
 ## Pointers
 
