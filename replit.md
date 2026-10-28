@@ -1,8 +1,11 @@
-# [Project name]
+# GhostOps
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Track 1 (Exorcism Protocol) entry for Hack with YOU: Halloween 2026 — a CrewAI swarm that contains a simulated paranormal outbreak using You.com grounding, Parasail inference and One dispatch. Full plan in `PLAN.md`.
 
 ## Run & Operate
+
+- `cd ghostops && python main.py --mock` — one fixture tick with no keys; `--eval` runs baseline vs enhanced; no flags = live feed
+- Python deps live in root `pyproject.toml`; keys go in `ghostops/.env` (see `.env.example`)
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
@@ -22,11 +25,19 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `ghostops/schemas.py` — shared contract (Tick, SpecialistReport, DecisionRecord). Change only with a group ping.
+- `ghostops/swarm/` — flow.py is the single pipeline; agents.py the 4 agents; challenge.py the risk gate; budget.py wave planning
+- `ghostops/partners/` — base.py interface, mock.py (MOCK_PARTNERS=1), real.py (You.com, Parasail, One, scenario MCP)
+- `ghostops/eval/` — memory, harness, timeline, fixtures
+- The pnpm/TypeScript scaffold (`artifacts/`, `lib/`) is unused by the swarm
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- One CrewAI Flow per tick; specialists run in budget-bounded waves, commander sees reports only (partial knowledge).
+- Risk gate triggers one bounded challenge round only on disagreement / missing evidence / evacuate-without-civilians — never on model confidence.
+- Mock mode swaps in a rule-based `BaseLLM` subclass so the identical Flow runs with zero network.
+- Grounding is pre-fetched into the researcher's data block (so You.com is load-bearing in both mock and real), with a `youcom_search` tool for follow-ups.
+- Dispatch never fails silently: One → webhook fallback → `ok=False, method=manual`.
 
 ## Product
 
@@ -38,7 +49,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- CrewAI flow banners ignore the verbose flag; main.py monkeypatches `EventListener().formatter.print`.
+- Use `MCPServerHTTP`/`streamablehttp_client`, not the URL-string shorthand, inside an event loop (zero tools, no error).
+- `ONE_MCP_URL` must come from the event's One skill; it is not hardcoded.
 
 ## Pointers
 

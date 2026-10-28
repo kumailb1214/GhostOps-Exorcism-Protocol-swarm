@@ -1,0 +1,1 @@
+- [CrewAI quirks](crewai-quirks.md) — flow banners ignore verbose (patch formatter.print); BaseLLM subclass works as mock agent brain; 12 s import cost is normal.

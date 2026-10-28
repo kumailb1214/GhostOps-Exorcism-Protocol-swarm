@@ -1,0 +1,17 @@
+{
+  "_expected": "observe",
+  "_note": "One nervous witness, high EMF but room temperature. Classic false alarm bait.",
+  "tick_id": 901,
+  "facility_id": "aws-builder-loft-sf",
+  "sector_reports": [
+    {
+      "sector": "entrance",
+      "sensors": { "emf_milligauss": 71, "temp_c": 22, "motion_events": 3 },
+      "sighting": { "entity_class": "level-2-wisp", "confidence": 0.41, "witness_count": 1 },
+      "civilian_status": "clear",
+      "containment_state": "stable"
+    }
+  ],
+  "swarm_budget": { "max_active_agents": 8, "api_credits_remaining": 40000 },
+  "escalation_channel": { "app": "discord", "channel": "#loft-incident", "via": "one-mcp" }
+}

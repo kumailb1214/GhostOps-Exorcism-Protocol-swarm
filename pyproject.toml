@@ -1,0 +1,24 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "kumailb1214", email = "kumailbukhari500@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "crewai>=1.15.32",
+    "crewai-tools>=1.15.32",
+    "httpx>=0.28.1",
+    "openai>=2.54.0",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.4",
+    "rich>=14.3.4",
+]
+
+[project.scripts]
+repl-nix-workspace = "repl_nix_workspace:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"

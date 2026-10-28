@@ -1,0 +1,24 @@
+{
+  "_expected": "evacuate",
+  "_note": "Two sectors, budget of 4 forces sequential waves. Only one sector has civilians.",
+  "tick_id": 902,
+  "facility_id": "aws-builder-loft-sf",
+  "sector_reports": [
+    {
+      "sector": "main_stage",
+      "sensors": { "emf_milligauss": 64, "temp_c": 3, "motion_events": 6 },
+      "sighting": { "entity_class": "level-3-poltergeist", "confidence": 0.66, "witness_count": 2 },
+      "civilian_status": "clear",
+      "containment_state": "stable"
+    },
+    {
+      "sector": "server_closet",
+      "sensors": { "emf_milligauss": 120, "temp_c": -7, "motion_events": 22 },
+      "sighting": { "entity_class": "level-5-phantom", "confidence": 0.9, "witness_count": 3 },
+      "civilian_status": "2 trapped",
+      "containment_state": "breached"
+    }
+  ],
+  "swarm_budget": { "max_active_agents": 4, "api_credits_remaining": 30000 },
+  "escalation_channel": { "app": "discord", "channel": "#loft-incident", "via": "one-mcp" }
+}

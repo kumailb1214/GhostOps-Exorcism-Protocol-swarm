@@ -1,0 +1,167 @@
+"""The single pipeline: one CrewAI Flow per tick.
+
+get_tick → validate → specialists per sector (budget-bounded waves) → risk gate →
+[challenge round] → commander → submit → dispatch → remember.
+"""
+from __future__ import annotations
+
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+
+from crewai.flow.flow import Flow, listen, router, start
+from pydantic import BaseModel, Field
+
+from eval.memory import SwarmMemory
+from partners.base import PartnerClient
+from schemas import SEVERITY, DecisionRecord, Role, SectorDecision, SpecialistReport, Tick
+from swarm.agents import Swarm
+from swarm.budget import peak_active, plan_waves
+from swarm.challenge import challenge_prompt, needs_challenge, pick_dissenter
+
+SPECIALIST_ROLES = (Role.SENSOR, Role.RESEARCHER, Role.CIVILIAN)
+
+
+class FlowState(BaseModel):
+    tick: Tick | None = None
+    reports: dict[str, list[SpecialistReport]] = Field(default_factory=dict)
+    challenge_reasons: dict[str, str] = Field(default_factory=dict)
+    decisions: list[SectorDecision] = Field(default_factory=list)
+    agents_used: int = 0
+    started: float = 0.0
+
+
+class ContainmentFlow(Flow[FlowState]):
+    def __init__(self, partners: PartnerClient, memory: SwarmMemory, *, team: str,
+                 challenge_enabled: bool = True, submit: bool = True, dispatch: bool = True,
+                 tick: Tick | None = None) -> None:
+        super().__init__()
+        self.p, self.memory, self.team = partners, memory, team
+        self.challenge_enabled, self.do_submit, self.do_dispatch = challenge_enabled, submit, dispatch
+        self._preloaded = tick
+        self.swarm = Swarm(partners, memory)
+        self.record: DecisionRecord | None = None
+
+    # 1 ------------------------------------------------------------------
+    @start()
+    def pull_tick(self) -> Tick:
+        self.state.started = time.perf_counter()
+        tick = self._preloaded or self.p.get_tick()
+        if not tick.sector_reports:
+            raise ValueError("tick has no sector_reports")
+        self.state.tick = tick
+        return tick
+
+    # 2 ------------------------------------------------------------------
+    @listen(pull_tick)
+    def assess(self, tick: Tick) -> dict[str, list[SpecialistReport]]:
+        waves = plan_waves(len(tick.sector_reports), tick.swarm_budget.max_active_agents)
+        self.state.agents_used = peak_active(waves, tick.swarm_budget.max_active_agents)
+        serial = tick.swarm_budget.max_active_agents < len(SPECIALIST_ROLES)
+        for wave in waves:
+            jobs = [(tick.sector_reports[i], role) for i in wave for role in SPECIALIST_ROLES]
+            if serial:
+                results = [self.swarm.specialist(role, rep) for rep, role in jobs]
+            else:
+                with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+                    results = list(ex.map(lambda j: self.swarm.specialist(j[1], j[0]), jobs))
+            for r in results:
+                self.state.reports.setdefault(r.sector, []).append(r)
+        return self.state.reports
+
+    # 3 ------------------------------------------------------------------
+    @router(assess)
+    def risk_gate(self, reports: dict[str, list[SpecialistReport]]) -> str:
+        if not self.challenge_enabled:
+            return "fast"
+        tick = self.state.tick
+        assert tick
+        for rep in tick.sector_reports:
+            flag, why = needs_challenge(reports[rep.sector], rep.civilian_status)
+            if flag:
+                self.state.challenge_reasons[rep.sector] = why
+        return "challenge" if self.state.challenge_reasons else "fast"
+
+    # 3b -----------------------------------------------------------------
+    @listen("challenge")
+    def challenge_round(self) -> str:
+        tick = self.state.tick
+        assert tick
+        for rep in tick.sector_reports:
+            if rep.sector not in self.state.challenge_reasons:
+                continue
+            reports = self.state.reports[rep.sector]
+            dissenter = pick_dissenter(reports)
+            prompt = challenge_prompt(dissenter, [r for r in reports if r is not dissenter])
+            revised = self.swarm.specialist(dissenter.role, rep, challenge=prompt)
+            reports.append(revised)  # keep the original: the commander sees the change of mind
+        return "decide"
+
+    # 4 ------------------------------------------------------------------
+    @listen("fast")
+    def decide_fast(self) -> list[SectorDecision]:
+        return self._decide()
+
+    @listen(challenge_round)
+    def decide_after_challenge(self) -> list[SectorDecision]:
+        return self._decide()
+
+    def _decide(self) -> list[SectorDecision]:
+        tick = self.state.tick
+        assert tick
+        for rep in tick.sector_reports:
+            reports = self.state.reports[rep.sector]
+            # Commander reasons over the latest word from each role.
+            latest: dict[Role, SpecialistReport] = {}
+            for r in reports:
+                latest[r.role] = r
+            out = self.swarm.command(rep.sector, list(latest.values()))
+            self.state.decisions.append(SectorDecision(
+                sector=rep.sector, challenged=rep.sector in self.state.challenge_reasons, **out.model_dump()))
+        return self.state.decisions
+
+    # 5 ------------------------------------------------------------------
+    @listen(decide_fast)
+    def act_fast(self, decisions: list[SectorDecision]) -> DecisionRecord:
+        return self._act(decisions)
+
+    @listen(decide_after_challenge)
+    def act_after_challenge(self, decisions: list[SectorDecision]) -> DecisionRecord:
+        return self._act(decisions)
+
+    def _act(self, decisions: list[SectorDecision]) -> DecisionRecord:
+        tick = self.state.tick
+        assert tick
+        # One action per tick: the most severe sector decision wins.
+        action = max((d.action for d in decisions), key=lambda a: SEVERITY[a])
+        record = DecisionRecord(
+            tick_id=tick.tick_id, facility_id=tick.facility_id, action=action, sectors=decisions,
+            reports=[r for rs in self.state.reports.values() for r in rs],
+            route="challenge" if self.state.challenge_reasons else "fast",
+            agents_used=self.state.agents_used + 1,
+        )
+        if self.do_submit:
+            j = self.p.submit(self.team, tick.tick_id, action)
+            record.submission = j.model_dump()
+        if self.do_dispatch and action != "observe":
+            record.dispatch = self.p.dispatch(self.escalation_text(record))
+        for d in decisions:
+            self.memory.remember(d.sector, tick.tick_id, d, record.submission)
+        record.timing_ms = int((time.perf_counter() - self.state.started) * 1000)
+        record.partner_calls = dict(self.p.calls)
+        self.record = record
+        return record
+
+    # --------------------------------------------------------------------
+    def escalation_text(self, record: DecisionRecord) -> str:
+        worst = max(record.sectors, key=lambda d: SEVERITY[d.action])
+        why = worst.rationale.strip().rstrip(".")
+        extra = f" · challenged: {self.state.challenge_reasons[worst.sector]}" if worst.sector in self.state.challenge_reasons else ""
+        return f"{self.team} · [{worst.sector}] · {record.action.upper()} · {why}{extra} (tick {record.tick_id})"
+
+
+def run_tick(partners: PartnerClient, memory: SwarmMemory, **kw: Any) -> DecisionRecord:
+    flow = ContainmentFlow(partners, memory, **kw)
+    flow.kickoff()
+    assert flow.record is not None
+    return flow.record

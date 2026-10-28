@@ -1,0 +1,15 @@
+{
+  "tick_id": 142,
+  "facility_id": "aws-builder-loft-sf",
+  "sector_reports": [
+    {
+      "sector": "catering_coffee_bar",
+      "sensors": { "emf_milligauss": 98, "temp_c": -4, "motion_events": 17 },
+      "sighting": { "entity_class": "level-5-phantom", "confidence": 0.82, "witness_count": 4 },
+      "civilian_status": "4 pinned",
+      "containment_state": "breached"
+    }
+  ],
+  "swarm_budget": { "max_active_agents": 8, "api_credits_remaining": 45000 },
+  "escalation_channel": { "app": "discord", "channel": "#loft-incident", "via": "one-mcp" }
+}

@@ -53,3 +53,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# python
+__pycache__/
+*.pyc
+.pythonlibs/
+ghostops/.env

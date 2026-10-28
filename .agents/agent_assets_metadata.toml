@@ -1,0 +1,17 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "QzbPz5KowdB-txY62Sw10"
+uri = "file://.local/conversation-workspace/files/PLAN.md"
+type = "text"
+title = "GhostOps — Track 1 Build Plan"
+description = "Single-pipeline plan: architecture, repo layout, shared contracts, 3-person ownership, hour-by-hour schedule, scoring map, demo script."
+logical_id = "7f94d035-f8a8-4bb9-878a-f39df1325e5f"
+content_hash = "sha256:263e0e1a0957e92ca39c2fe5960b46af0b8f51e5f3377e90c2fe8e4d9c388033"
+size = 6614
+mtime_ms = 1793212954643
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/conversation:1c49179a-a8fe-4dfd-a502-40cdae522c49/7f94d035-f8a8-4bb9-878a-f39df1325e5f/d9f344db-d05b-457c-82b8-1b40583771ff"
+storage_version_token = "1793212960147239"
+content_type = "text/markdown"
+source_uri = "file://PLAN.md"

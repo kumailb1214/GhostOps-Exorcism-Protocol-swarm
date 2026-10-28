@@ -1,0 +1,17 @@
+{
+  "_expected": "contain",
+  "_note": "Real signature, breached containment, nobody inside. Contain, do not evacuate the building.",
+  "tick_id": 903,
+  "facility_id": "aws-builder-loft-sf",
+  "sector_reports": [
+    {
+      "sector": "storage_b",
+      "sensors": { "emf_milligauss": 88, "temp_c": 1, "motion_events": 12 },
+      "sighting": { "entity_class": "level-3-poltergeist", "confidence": 0.78, "witness_count": 2 },
+      "civilian_status": "clear",
+      "containment_state": "breached"
+    }
+  ],
+  "swarm_budget": { "max_active_agents": 8, "api_credits_remaining": 38000 },
+  "escalation_channel": { "app": "discord", "channel": "#loft-incident", "via": "one-mcp" }
+}

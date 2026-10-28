@@ -1,0 +1,15 @@
+{
+  "tick_id": 143,
+  "facility_id": "aws-builder-loft-sf",
+  "sector_reports": [
+    {
+      "sector": "main_stage",
+      "sensors": { "emf_milligauss": 4, "temp_c": 21, "motion_events": 2 },
+      "sighting": { "entity_class": "none", "confidence": 0.0, "witness_count": 0 },
+      "civilian_status": "clear",
+      "containment_state": "stable"
+    }
+  ],
+  "swarm_budget": { "max_active_agents": 8, "api_credits_remaining": 44000 },
+  "escalation_channel": { "app": "discord", "channel": "#loft-incident", "via": "one-mcp" }
+}
