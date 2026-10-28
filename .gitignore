@@ -59,3 +59,4 @@ __pycache__/
 *.pyc
 .pythonlibs/
 ghostops/.env
+ghostops/runs/

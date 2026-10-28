@@ -11,9 +11,16 @@ cp .env.example .env            # fill in keys (B owns this file)
 python main.py --mock           # zero keys: one fixture tick end to end
 python main.py --mock --eval    # baseline vs enhanced over every fixture
 python main.py                  # live: pull tick → decide → submit → dispatch to #loft-incident
-python main.py --loop 10        # live: ten ticks
+python main.py --scenario outbreak-level-5 --loop 2   # both outbreak ticks (stops itself when the feed is exhausted)
+python main.py --scenario control-tick                # the control tick (must be observe)
+python main.py --scoreboard     # live scoreboard
 python main.py --no-challenge   # ablation: disable the risk gate
 ```
+
+Live status (Oct 28): all three scenario ticks submitted as `agent-doom`, 3/3 correct, 0 false alarms.
+The feed is per-team and one-shot: once a scenario is exhausted it re-serves the last tick with `exhausted: true`
+and further submissions are flagged `duplicate` (not scored twice). To answer a tick you already pulled, run
+`--fixture <tick json>` with submit on; the submission goes by `tick_id`.
 
 Python 3.10–3.13. Dependencies are in the repo root `pyproject.toml` (`uv sync` or `pip install crewai crewai-tools httpx openai pydantic python-dotenv rich`).
 
@@ -60,8 +67,11 @@ eval/             memory.py (provenance-tagged), harness.py (baseline vs enhance
 
 ## Fallbacks (in the order the brief recommends)
 
-1. One MCP → one retry inside the transport.
-2. `DISCORD_WEBHOOK_URL` if set (method = `webhook-fallback`; tell the organizers' table).
+1. One, via its **local** MCP server (`npx -y @withone/mcp` with `ONE_API_KEY` as `ONE_SECRET`; the hosted
+   `mcp.withone.ai/mcp` is browser-OAuth only). One attempt per run; organizers confirmed One's Discord send is
+   401-ing and requires server-management access we do not have. `ONE_DISPATCH=0` skips the attempt.
+2. `DISCORD_WEBHOOK_URL` — the venue webhook from hack page §3.4, the organizers' recommended programmatic path
+   (method = `webhook-fallback`, status 204 = posted).
 3. `ok=False, method=manual` — post `agent-doom · [sector] · ACTION · rationale` yourself from the account that joined the server.
 
 Feed down? `python main.py --fixture eval/fixtures/outbreak-level-5.json` runs the identical contract offline; queue the

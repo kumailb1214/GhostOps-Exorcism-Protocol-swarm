@@ -33,6 +33,10 @@ class PartnerError(RuntimeError):
     pass
 
 
+class FeedExhausted(PartnerError):
+    """The scenario has no new ticks for this team; the feed re-serves the last one with exhausted=true."""
+
+
 def _require(name: str) -> str:
     v = os.environ.get(name)
     if not v:
@@ -90,7 +94,10 @@ async def _one_calls(secret: str, calls: list[tuple[str, dict[str, Any]]]) -> li
 class RealPartners(PartnerClient):
     def __init__(self) -> None:
         super().__init__()
-        self.scenario_url = _require("SCENARIO_MCP")
+        self.scenario_url = os.environ.get("SCENARIO_MCP", "https://api.you.com/mcp/halloween-hack-26")
+        self.team = os.environ.get("TEAM_HANDLE", "agent-doom")
+        self.scenario = os.environ.get("SCENARIO", "outbreak-level-5")  # feed enum: outbreak-level-5 | control-tick
+        self.team_token = os.environ.get("TEAM_TOKEN")  # only if organizers enable tokens
         self.channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1564842098740695100")
         self._openai = OpenAI(base_url=PARASAIL_BASE, api_key=_require("PARASAIL_API_KEY"))
         self._llm = LLM(
@@ -113,17 +120,28 @@ class RealPartners(PartnerClient):
         self._one_broken: str | None = None  # first One failure this run; afterwards go straight to the webhook
 
     # --- scenario feed -------------------------------------------------
+    def _feed_args(self, **extra: Any) -> dict[str, Any]:
+        args: dict[str, Any] = {"team": self.team, **extra}
+        if self.team_token:
+            args["token"] = self.team_token
+        return args
+
     def get_tick(self) -> Tick:
+        """Live schema (verified 2026-10-28): get-tick requires team + scenario; returns {tick, exhausted}."""
         self.calls["scenario.get_tick"] += 1
-        data = mcp_call(self.scenario_url, "hack26-get-tick", {})
+        data = mcp_call(self.scenario_url, "hack26-get-tick", self._feed_args(scenario=self.scenario))
+        if data.get("exhausted"):
+            raise FeedExhausted(f"scenario '{self.scenario}' has no new ticks for {self.team} "
+                                f"(last tick {(data.get('tick') or {}).get('tick_id')}); submitting again would be a duplicate")
         return Tick.model_validate(data.get("tick", data))
 
     def submit(self, team: str, tick_id: int, action: str) -> Judgment:
         self.calls["scenario.submit"] += 1
         data = mcp_call(self.scenario_url, "hack26-submit-containment",
-                        {"team": team, "tick_id": tick_id, "action": action})
-        return Judgment(expected_action=data.get("expected_action") or data.get("expected"),
-                        score=data.get("score"), false_alarm=data.get("false_alarm"), raw=data)
+                        self._feed_args(tick_id=tick_id, action=action))
+        j = data.get("judgment") or data  # live feed nests the verdict under "judgment"
+        return Judgment(expected_action=j.get("expected_action") or j.get("expected"),
+                        score=j.get("score"), false_alarm=j.get("false_alarm"), raw=data)
 
     def scoreboard(self) -> Any:
         self.calls["scenario.scoreboard"] += 1

@@ -61,29 +61,32 @@ class Swarm:
             """Recall prior sensor signatures, decisions and judgments for a sector from swarm memory."""
             return json.dumps(memory.recall(sector))
 
-        self.sensor = Agent(
+        self.sensor = dict(
             role="Sensor Analyst", llm=llm, tools=[recall_signatures], verbose=False, max_iter=3,
             goal="Decide whether the sector's sensor readings form a coherent paranormal signature or a false positive.",
             backstory="You read EMF, thermal and motion telemetry. You never see witness reports; you judge physics only "
                       "and you flag internally inconsistent readings instead of explaining them away.")
-        self.researcher = Agent(
+        self.researcher = dict(
             role="Grounding Researcher", llm=llm, tools=[youcom_search], verbose=False, max_iter=3,
             goal="Verify the reported sighting against external references and say what evidence is missing.",
             backstory="You only see the witness sighting and web results. You distrust single low-confidence witnesses and "
                       "you separate what a source actually says from what an agent assumes.")
-        self.civilian = Agent(
+        self.civilian = dict(
             role="Civilian Safety Officer", llm=llm, tools=[], verbose=False, max_iter=2,
             goal="Weigh the human cost of acting versus waiting in this sector.",
             backstory="You only see civilian status and containment state. Pinned civilians override caution; "
                       "an empty breached room does not justify evacuating the building.")
-        self.commander = Agent(
+        self.commander = dict(
             role="Containment Commander", llm=llm, tools=[], verbose=False, max_iter=2,
             goal="Choose contain, evacuate or observe for the sector from specialist reports and explain the call.",
             backstory="You never see raw telemetry — only structured reports. You resolve disagreement explicitly, "
                       "name what evidence was missing, and say why the alternatives were rejected.")
 
     # ---- specialists ----------------------------------------------------
-    def _run(self, agent: Agent, description: str, out_model: type[BaseModel]) -> BaseModel:
+    def _run(self, spec: dict[str, Any], description: str, out_model: type[BaseModel]) -> BaseModel:
+        # A fresh Agent per task: CrewAI refuses to run one Agent's executor concurrently, and sectors run in
+        # parallel waves. Construction is cheap; the role/goal/tools come from the shared spec.
+        agent = Agent(**spec)
         task = Task(description=description, expected_output="A single JSON object.", agent=agent, output_pydantic=out_model)
         res = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False).kickoff()
         if res.pydantic is not None:

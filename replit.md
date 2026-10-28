@@ -41,13 +41,18 @@ Track 1 (Exorcism Protocol) entry for Hack with YOU: Halloween 2026 — a CrewAI
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Live status (2026-10-28): all 3 scenario ticks submitted as `agent-doom`, 3/3 correct, 0 false alarms; Discord escalations posted via the venue webhook.
+- Team handle `agent-doom` is self-chosen (organizers allow it); `TEAM_HANDLE` env var, no token needed.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Team handle is `agent-doom`. Use the venue Discord webhook for dispatch — the team cannot connect Discord in One (needs server-management access they lack); organizers endorse the webhook.
 
 ## Gotchas
+
+- Live feed schema differs from the brief: `hack26-get-tick` requires `team` + `scenario` (`outbreak-level-5`|`control-tick`); exhausted scenarios re-serve the last tick with `exhausted: true`; verdicts are nested under `judgment`.
+- CrewAI refuses to run one Agent instance concurrently — agents.py builds a fresh Agent per task because sectors run in parallel waves.
+- Parasail GLM-5.3-flash needs `reasoning_effort="low"` or it burns max_tokens on thinking and returns empty content.
 
 - CrewAI flow banners ignore the verbose flag; main.py monkeypatches `EventListener().formatter.print`.
 - Use `MCPServerHTTP`/`streamablehttp_client`, not the URL-string shorthand, inside an event loop (zero tools, no error).

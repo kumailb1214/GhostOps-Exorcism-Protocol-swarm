@@ -21,6 +21,9 @@ class PartnerClient(ABC):
     @abstractmethod
     def submit(self, team: str, tick_id: int, action: str) -> Judgment: ...
 
+    def scoreboard(self) -> Any:
+        return {"note": "no scoreboard in this partner mode"}
+
     # --- You.com grounding --------------------------------------------
     @abstractmethod
     def ground(self, query: str, count: int = 3) -> list[dict[str, str]]:
