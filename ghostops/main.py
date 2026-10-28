@@ -20,6 +20,11 @@ os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
 os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
 
+import logging
+
+logging.getLogger("crewai").setLevel(logging.ERROR)
+logging.getLogger("root").setLevel(logging.ERROR)
+
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent / ".env")

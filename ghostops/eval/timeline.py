@@ -25,7 +25,8 @@ def show_record(rec: DecisionRecord) -> None:
         body = (f"[bold]{d.action.upper()}[/bold] — {d.rationale}\n"
                 f"supporting: {', '.join(d.supporting_observations) or '—'}\n"
                 f"disagreement: {d.disagreement or 'none'} · challenged: {d.challenged}\n"
-                f"missing: {', '.join(d.missing_evidence) or '—'} · rejected: {d.rejected_alternatives or '—'}")
+                f"missing: {', '.join(d.missing_evidence) or '—'} · rejected: {d.rejected_alternatives or '—'}"
+                + (f"\n[red]FLOOR: {d.floor_applied}[/red]" if d.floor_applied else ""))
         console.print(Panel(body, title=f"Commander · {d.sector}"))
     foot = (f"TICK ACTION: [bold]{rec.action}[/bold] · agents used {rec.agents_used} · partner calls {rec.partner_calls}\n"
             f"submission: {rec.submission}\ndispatch: {rec.dispatch}")

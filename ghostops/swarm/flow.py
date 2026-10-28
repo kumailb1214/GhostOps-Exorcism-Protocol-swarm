@@ -17,7 +17,7 @@ from partners.base import PartnerClient
 from schemas import SEVERITY, DecisionRecord, Role, SectorDecision, SpecialistReport, Tick
 from swarm.agents import Swarm
 from swarm.budget import peak_active, plan_waves
-from swarm.challenge import challenge_prompt, needs_challenge, pick_dissenter
+from swarm.challenge import challenge_prompt, civilians_at_risk, needs_challenge, pick_dissenter
 
 SPECIALIST_ROLES = (Role.SENSOR, Role.RESEARCHER, Role.CIVILIAN)
 
@@ -116,9 +116,23 @@ class ContainmentFlow(Flow[FlowState]):
             for r in reports:
                 latest[r.role] = r
             out = self.swarm.command(rep.sector, list(latest.values()))
-            self.state.decisions.append(SectorDecision(
-                sector=rep.sector, challenged=rep.sector in self.state.challenge_reasons, **out.model_dump()))
+            decision = SectorDecision(sector=rep.sector, challenged=rep.sector in self.state.challenge_reasons, **out.model_dump())
+            self._apply_floors(decision, latest, rep.civilian_status)
+            self.state.decisions.append(decision)
         return self.state.decisions
+
+    @staticmethod
+    def _apply_floors(d: SectorDecision, latest: dict[Role, SpecialistReport], civilian_status: str) -> None:
+        """Two auditable, rule-based floors under the commander. They exist because a false alarm on a
+        control tick and an un-evacuated pinned civilian are the two most expensive scored errors."""
+        recs = {r.recommended_action for r in latest.values()}
+        civ = latest.get(Role.CIVILIAN)
+        if recs == {"observe"} and d.action != "observe":
+            d.floor_applied = f"commander said {d.action} against unanimous observe → observe"
+            d.action = "observe"
+        elif civ and civ.recommended_action == "evacuate" and civilians_at_risk(civilian_status) and d.action != "evacuate":
+            d.floor_applied = f"civilians at risk ({civilian_status}) and safety officer says evacuate → evacuate"
+            d.action = "evacuate"
 
     # 5 ------------------------------------------------------------------
     @listen(decide_fast)

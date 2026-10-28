@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 from crewai import LLM
+from crewai.events import crewai_event_bus
+from crewai.events.types.llm_events import LLMCallCompletedEvent
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from openai import OpenAI
@@ -23,7 +25,7 @@ from schemas import Judgment, Tick
 PARASAIL_BASE = "https://api.parasail.io/v1"
 YDC_SEARCH = "https://ydc-index.io/v1/search"
 PARASAIL_CHAT_MODEL = os.environ.get("PARASAIL_MODEL", "parasail-glm-53-flash")
-PARASAIL_EMBED_MODEL = os.environ.get("PARASAIL_EMBED_MODEL", "parasail-ai/GritLM-7B-vllm")
+PARASAIL_EMBED_MODEL = os.environ.get("PARASAIL_EMBED_MODEL", "parasail-bge-m3")  # GritLM is not deployed on self-serve keys (verified live)
 
 
 class PartnerError(RuntimeError):
@@ -63,13 +65,20 @@ class RealPartners(PartnerClient):
         self.scenario_url = _require("SCENARIO_MCP")
         self.channel_id = os.environ.get("DISCORD_CHANNEL_ID", "1564842098740695100")
         self._openai = OpenAI(base_url=PARASAIL_BASE, api_key=_require("PARASAIL_API_KEY"))
-        self._llm = _CountingLLM(
-            counter=self.calls,
+        self._llm = LLM(
             model=f"openai/{PARASAIL_CHAT_MODEL}",
             base_url=PARASAIL_BASE,
             api_key=os.environ["PARASAIL_API_KEY"],
             temperature=0.1,
+            max_tokens=4096,
+            # GLM-5.3-flash is a reasoning model: without this it burns the whole token budget thinking and
+            # returns content=None. reasoning_effort=low keeps ~40 reasoning tokens and ~1 s latency (verified live).
+            reasoning_effort="low",
         )
+        # LLM(...) is a factory returning a provider class, so count calls via the event bus instead of subclassing.
+        @crewai_event_bus.on(LLMCallCompletedEvent)
+        def _count_llm(_src: Any, _ev: Any) -> None:
+            self.calls["parasail.chat"] += 1
         self._http = httpx.Client(timeout=20)
         self._last_dispatch: str | None = None
 
@@ -95,7 +104,7 @@ class RealPartners(PartnerClient):
         self.calls["youcom.search"] += 1
         for attempt in range(2):
             r = self._http.post(YDC_SEARCH, headers={"X-API-Key": _require("YDC_API_KEY"), "Content-Type": "application/json"},
-                                json={"query": query, "count": count, "extraction": "highlights"})
+                                json={"query": query, "count": count})  # "extraction" returns 422 on self-serve keys
             if r.status_code == 429 and attempt == 0:
                 time.sleep(float(r.headers.get("Retry-After", "1")))
                 continue
@@ -106,6 +115,8 @@ class RealPartners(PartnerClient):
         out = []
         for h in hits[:count]:
             snippet = " ".join(h.get("highlights") or h.get("snippets") or [h.get("description", "")])
+            if not snippet.strip():
+                continue
             out.append({"title": h.get("title", ""), "url": h.get("url", ""), "snippet": snippet[:400]})
         return out
 
@@ -150,14 +161,3 @@ class RealPartners(PartnerClient):
         return {"ok": False, "method": "manual",
                 "detail": f"{err}. Post manually to #loft-incident ({self.channel_id}) and tell the organizers' table."}
 
-
-class _CountingLLM(LLM):
-    """CrewAI's OpenAI-compatible LLM with a call counter so partner usage is auditable."""
-
-    def __init__(self, counter, **kw):
-        super().__init__(**kw)
-        object.__setattr__(self, "_counter", counter)
-
-    def call(self, *a, **kw):  # type: ignore[override]
-        self._counter["parasail.chat"] += 1
-        return super().call(*a, **kw)

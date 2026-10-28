@@ -86,6 +86,7 @@ class SectorDecision(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     rejected_alternatives: str = ""
     challenged: bool = False
+    floor_applied: str = ""  # deterministic safety floor that overrode the commander, if any
 
 
 class DecisionRecord(BaseModel):
