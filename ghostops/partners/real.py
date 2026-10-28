@@ -110,6 +110,7 @@ class RealPartners(PartnerClient):
         self._http = httpx.Client(timeout=20)
         self._last_dispatch: str | None = None
         self._one_action: dict[str, Any] | None = None  # resolved once per process via find_one_actions
+        self._one_broken: str | None = None  # first One failure this run; afterwards go straight to the webhook
 
     # --- scenario feed -------------------------------------------------
     def get_tick(self) -> Tick:
@@ -191,22 +192,28 @@ class RealPartners(PartnerClient):
             return {"ok": True, "method": "dedup", "detail": "identical escalation already posted"}
         self.calls["one.dispatch"] += 1
         one_key = os.environ.get("ONE_SECRET") or os.environ.get("ONE_API_KEY")
-        if one_key:
+        if self._one_broken:
+            err = f"One skipped (failed earlier this run: {self._one_broken})"
+        elif one_key and os.environ.get("ONE_DISPATCH", "1") != "0":
             try:
                 res = self._dispatch_via_one(one_key, content)
                 self._last_dispatch = content
                 return {"ok": True, "method": "one", "detail": res}
-            except Exception as e:  # never retry a write blindly; fall back loudly instead
+            except Exception as e:
+                # Organizers (Oct 28): One's Discord send 401s for connected accounts; make ONE attempt, then use
+                # the venue webhook for the rest of the run. Never retry a write blindly.
+                self._one_broken = str(e)[:200]
                 err = f"One failed: {e}"
         else:
-            err = "ONE_API_KEY not set"
+            err = "One dispatch disabled or ONE_API_KEY not set"
         hook = os.environ.get("DISCORD_WEBHOOK_URL")
         if hook:
             r = self._http.post(hook, json={"content": content})
             ok = r.status_code < 300
             if ok:
                 self._last_dispatch = content
-            return {"ok": ok, "method": "webhook-fallback", "detail": f"{err}; webhook status {r.status_code}"}
+            return {"ok": ok, "method": "webhook-fallback",
+                    "detail": f"{err}; venue webhook status {r.status_code}" + ("" if ok else f" {r.text[:200]}")}
         return {"ok": False, "method": "manual",
                 "detail": f"{err}. Post manually to #loft-incident ({self.channel_id}) and tell the organizers' table."}
 
