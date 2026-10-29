@@ -9,3 +9,4 @@ description: Where decision time went in the GhostOps pipeline and the rules tha
 **How to apply:** any new stage must justify its ~2 s; measure per-role call time before touching the architecture.
 - Feed MCP calls cost ~1 s (get-tick) + ~2 s (submit) each when every call opens a fresh streamable-HTTP session; a persistent session on a background loop brings both under 0.5 s.
 - Organizers (per a judge, 2026-10-28) accept resubmission on the same ticks when no new ticks exist; best run counts. `--resubmit` bypasses the exhausted-feed guard.
+- Parasail GLM-flash is the fastest model they host (1.2 s single; others 3.5–8 s) but under 4 concurrent calls from one key individual latency spreads 1.2–4 s+. Hedge slow calls (duplicate after ~2.5 s, first wins) rather than switching models. Remaining run-to-run variance (3–5 s) is provider load.

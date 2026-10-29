@@ -28,7 +28,9 @@ def show_record(rec: DecisionRecord) -> None:
                 f"missing: {', '.join(d.missing_evidence) or '—'} · rejected: {d.rejected_alternatives or '—'}"
                 + (f"\n[red]FLOOR: {d.floor_applied}[/red]" if d.floor_applied else ""))
         console.print(Panel(body, title=f"{'Settled · ' + d.settled_by if d.settled_by else 'Commander'} · {d.sector}"))
-    foot = (f"TICK ACTION: [bold]{rec.action}[/bold] · agents used {rec.agents_used} · partner calls {rec.partner_calls}\n"
+    stages = " · ".join(f"{k} {v} ms" for k, v in rec.stage_ms.items())
+    foot = (f"TICK ACTION: [bold]{rec.action}[/bold] · peak agents {rec.agents_used} · partner calls {rec.partner_calls}\n"
+            f"stages: {stages} · hedged calls {rec.hedged_calls}\n"
             f"submission: {rec.submission}\ndispatch: {rec.dispatch}")
     console.print(Panel(foot, title="Outcome"))
 

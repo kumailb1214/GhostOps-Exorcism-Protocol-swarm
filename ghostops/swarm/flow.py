@@ -33,6 +33,7 @@ class FlowState(BaseModel):
     decisions: list[SectorDecision] = Field(default_factory=list)
     agents_used: int = 0  # PEAK concurrent agents in any stage
     started: float = 0.0
+    marks: dict[str, int] = Field(default_factory=dict)
 
 
 class ContainmentFlow(Flow[FlowState]):
@@ -54,6 +55,7 @@ class ContainmentFlow(Flow[FlowState]):
         if not tick.sector_reports:
             raise ValueError("tick has no sector_reports")
         self.state.tick = tick
+        self._mark("pull")
         return tick
 
     # 2 ------------------------------------------------------------------
@@ -74,6 +76,7 @@ class ContainmentFlow(Flow[FlowState]):
             tasks = [(by_sector[j.split('|')[0]], Role(role)) for j in wave for role in j.split('|')[1].split(',')]
             for r in self._parallel(lambda t: self.swarm.specialist(t[1], t[0]), tasks, cap):
                 self.state.reports.setdefault(r.sector, []).append(r)
+        self._mark("assess")
         return self.state.reports
 
     # 3 ------------------------------------------------------------------
@@ -132,7 +135,11 @@ class ContainmentFlow(Flow[FlowState]):
                 tasks.append((escalate, (by_sector[sector], role)))
         for sector, report in self._parallel(lambda t: t[0](t[1]), tasks, cap):
             self.state.reports[sector].append(report)  # originals are kept: the commander sees the change of mind
+        self._mark("refine")
         return "decide"
+
+    def _mark(self, stage: str) -> None:
+        self.state.marks[stage] = int((time.perf_counter() - self.state.started) * 1000) - sum(self.state.marks.values())
 
     def _parallel(self, fn, items, max_active: int):
         if not items:
@@ -214,6 +221,7 @@ class ContainmentFlow(Flow[FlowState]):
         decided = {d.sector: d for d in self._parallel(command, need_commander, effective_cap(tick.swarm_budget.max_active_agents))}
         for rep in ordered:
             self.state.decisions.append(decided.get(rep.sector) or pre[rep.sector])
+        self._mark("decide")
         return self.state.decisions
 
     @staticmethod
@@ -252,9 +260,12 @@ class ContainmentFlow(Flow[FlowState]):
         if self.do_submit:
             j = self.p.submit(self.team, tick.tick_id, action)
             record.submission = j.model_dump()
+            self._mark("submit")
         # decision time = tick pulled → containment submitted; the dispatch itself is not counted against us
         record.timing_ms = int((time.perf_counter() - self.state.started) * 1000)
         record.partner_calls = dict(self.p.calls)
+        record.stage_ms = dict(self.state.marks)
+        record.hedged_calls = self.swarm.hedges
         if self.do_dispatch and action != "observe":
             record.dispatch = self.p.dispatch(self.escalation_text(record))
         for d in decisions:

@@ -100,6 +100,8 @@ class DecisionRecord(BaseModel):
     reports: list[SpecialistReport] = Field(default_factory=list)
     route: Literal["fast", "challenge"] = "fast"
     timing_ms: int = 0
+    stage_ms: dict[str, int] = Field(default_factory=dict)
+    hedged_calls: int = 0  # duplicate requests fired against slow model calls (same agent; first answer wins)  # where the time went: pull, assess, refine, decide, submit
     partner_calls: dict[str, int] = Field(default_factory=dict)
     agents_used: int = 0
     submission: dict[str, Any] | None = None

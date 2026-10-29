@@ -6,6 +6,8 @@ structured reports, never raw sensors. That partial-knowledge split is what the 
 from __future__ import annotations
 
 import json
+import os
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any
 
 from crewai import Agent, Crew, Process, Task
@@ -42,6 +44,10 @@ SCHEMA_HINT = (
 )
 
 
+HEDGE_MS = int(os.environ.get("GHOSTOPS_HEDGE_MS", "2500"))  # 0 disables tail-latency hedging
+_hedge_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="hedge")
+
+
 def _data_block(payload: dict[str, Any]) -> str:
     return "<<DATA>>" + json.dumps(payload, default=str) + "<<END>>"
 
@@ -50,6 +56,7 @@ class Swarm:
     def __init__(self, partners: PartnerClient, memory) -> None:
         self.p = partners
         self.memory = memory
+        self.hedges = 0  # duplicate requests fired against slow calls (reported in the record)
         llm = partners.llm()
 
         @tool("youcom_search")
@@ -88,6 +95,25 @@ class Swarm:
 
     # ---- specialists ----------------------------------------------------
     def _run(self, spec: dict[str, Any], description: str, out_model: type[BaseModel]) -> BaseModel:
+        """Run one agent task, hedged against provider tail latency: the model answers in ~1.5 s alone but under
+        concurrent load one call in four comes back in 4 s+ and the whole parallel stage waits for it. If no
+        answer arrives within HEDGE_MS the SAME agent sends a duplicate request and the first answer wins.
+        It is a retry, not an extra agent, and it is capped at one hedge per task."""
+        if HEDGE_MS <= 0:
+            return self._run_once(spec, description, out_model)
+        futures = [_hedge_pool.submit(self._run_once, spec, description, out_model)]
+        done, _ = wait(futures, timeout=HEDGE_MS / 1000, return_when=FIRST_COMPLETED)
+        if not done:
+            self.hedges += 1
+            futures.append(_hedge_pool.submit(self._run_once, spec, description, out_model))
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+        winner = next(iter(done))
+        for f in futures:
+            if f is not winner:
+                f.cancel()  # the loser's result is discarded if it is still in flight
+        return winner.result()
+
+    def _run_once(self, spec: dict[str, Any], description: str, out_model: type[BaseModel]) -> BaseModel:
         # A fresh Agent per task: CrewAI refuses to run one Agent's executor concurrently, and sectors run in
         # parallel waves. Construction is cheap; the role/goal/tools come from the shared spec.
         agent = Agent(**spec)
