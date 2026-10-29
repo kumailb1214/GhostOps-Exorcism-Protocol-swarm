@@ -43,6 +43,7 @@ from eval.timeline import console, show_comparison, show_record  # noqa: E402
 from partners import make_partners  # noqa: E402
 from partners.real import FeedExhausted  # noqa: E402
 from schemas import Tick  # noqa: E402
+from swarm.agents import drain_hedges  # noqa: E402
 from swarm.flow import run_tick  # noqa: E402
 
 
@@ -98,6 +99,7 @@ def main() -> int:
             console.print(f"[yellow]Feed exhausted after {i} tick(s):[/yellow] {e}")
             break
         show_record(rec)
+        drain_hedges()  # losing hedge requests finish quietly here, outside the tick clock
         if a.json:
             Path(a.json).parent.mkdir(parents=True, exist_ok=True)
             with open(a.json, "a") as f:

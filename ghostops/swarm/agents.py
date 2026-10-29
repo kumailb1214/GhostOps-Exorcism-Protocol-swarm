@@ -5,6 +5,8 @@ structured reports, never raw sensors. That partial-knowledge split is what the 
 """
 from __future__ import annotations
 
+import atexit
+import threading
 import json
 import os
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -44,8 +46,19 @@ SCHEMA_HINT = (
 )
 
 
-HEDGE_MS = int(os.environ.get("GHOSTOPS_HEDGE_MS", "2500"))  # 0 disables tail-latency hedging
+HEDGE_MS = int(os.environ.get("GHOSTOPS_HEDGE_MS", "3000"))  # 0 disables tail-latency hedging
 _hedge_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="hedge")
+_in_flight: set = set()  # futures that may still be running (losing hedges)
+
+
+def drain_hedges(timeout: float = 20.0) -> None:
+    """Wait for losing hedge requests to finish before the process exits, so the interpreter does not tear the
+    HTTP client down under them. Called by main after the record is printed: it is outside the tick clock."""
+    wait(list(_in_flight), timeout=timeout)
+    _in_flight.clear()
+
+
+atexit.register(drain_hedges)
 
 
 def _data_block(payload: dict[str, Any]) -> str:
@@ -57,6 +70,8 @@ class Swarm:
         self.p = partners
         self.memory = memory
         self.hedges = 0  # duplicate requests fired against slow calls (reported in the record)
+        self._hedge_lock = threading.Lock()
+        self._hedge_open = False
         llm = partners.llm()
 
         @tool("youcom_search")
@@ -102,16 +117,34 @@ class Swarm:
         if HEDGE_MS <= 0:
             return self._run_once(spec, description, out_model)
         futures = [_hedge_pool.submit(self._run_once, spec, description, out_model)]
+        _in_flight.update(futures)
         done, _ = wait(futures, timeout=HEDGE_MS / 1000, return_when=FIRST_COMPLETED)
-        if not done:
-            self.hedges += 1
+        if not done and self._take_hedge_slot():
             futures.append(_hedge_pool.submit(self._run_once, spec, description, out_model))
+            _in_flight.add(futures[-1])
+        if not done:
             done, _ = wait(futures, return_when=FIRST_COMPLETED)
         winner = next(iter(done))
+        if len(futures) > 1:
+            self._release_hedge_slot()
+        _in_flight.discard(winner)
         for f in futures:
             if f is not winner:
                 f.cancel()  # the loser's result is discarded if it is still in flight
         return winner.result()
+
+    def _take_hedge_slot(self) -> bool:
+        # One hedge in flight at a time: under a provider rate limit, extra requests make everything slower.
+        with self._hedge_lock:
+            if self._hedge_open:
+                return False
+            self._hedge_open = True
+            self.hedges += 1
+            return True
+
+    def _release_hedge_slot(self) -> None:
+        with self._hedge_lock:
+            self._hedge_open = False
 
     def _run_once(self, spec: dict[str, Any], description: str, out_model: type[BaseModel]) -> BaseModel:
         # A fresh Agent per task: CrewAI refuses to run one Agent's executor concurrently, and sectors run in
